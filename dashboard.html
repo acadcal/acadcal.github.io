@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dashboard | Academic Calendar (2025)</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container">
+    <header class="topbar">
+      <div class="brand">
+        <h1>Academic Calendar — 2025</h1>
+        <p class="subtitle">Monthly stacked view · Deadlines & Holidays · Click a day to view events</p>
+      </div>
+
+      <div class="controls-top">
+        <div class="left-controls">
+          <label for="jump-month" class="jump-label">Jump to month</label>
+          <select id="jump-month" aria-label="Jump to month"></select>
+        </div>
+
+        <div class="user-block">
+          <div class="greeting">Hello, <span id="user-name-display">Guest</span></div>
+          <button id="edit-profile-btn" title="Edit profile">Profile</button>
+          <button id="logout-btn" title="Logout">Logout</button>
+          <div class="notif-control">
+            <button id="notif-perm-btn" title="Notifications">🔔</button>
+            <label class="notif-label" id="notif-status">Notifications: <strong id="notif-state">Off</strong></label>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <section id="profile-panel" class="profile-panel hidden" aria-hidden="true">
+      <h3>Your profile</h3>
+      <div class="profile-form">
+        <label>Username <input id="profile-username" placeholder="username" /></label>
+
+        <!-- role is now read-only (no select) -->
+        <label>Role <div id="profile-role-readonly" class="readonly-field">—</div></label>
+
+        <div id="student-fields-panel" class="student-fields hidden">
+          <label>Student Number <input id="profile-snumber" /></label>
+          <label>Full Name <input id="profile-sname" /></label>
+          <label>Age <input id="profile-sage" type="number" /></label>
+          <label>Year Level <input id="profile-syear" /></label>
+        </div>
+
+        <div class="profile-actions">
+          <button id="save-profile">Save</button>
+          <button id="close-profile" class="secondary">Close</button>
+        </div>
+      </div>
+    </section>
+
+    <nav class="legend">
+      <div><span class="dot holiday"></span> Holiday</div>
+      <div><span class="dot deadline"></span> Deadline</div>
+      <div id="stats">Events: <strong id="event-count">0</strong></div>
+    </nav>
+
+    <main>
+      <!-- months stacked vertically -->
+      <section id="months-grid" class="months-grid" aria-label="2025 calendar"></section>
+    </main>
+
+    <aside id="day-panel" class="day-panel hidden" role="dialog" aria-modal="true">
+      <div class="panel-header">
+        <h3 id="panel-date">Date</h3>
+        <button id="panel-close" title="Close">✕</button>
+      </div>
+      <div class="panel-body">
+        <ul id="event-list" class="event-list"></ul>
+
+        <form id="event-form" class="event-form">
+          <h4>Add Event (Teachers only)</h4>
+          <input type="text" id="event-title" placeholder="Title (required)" required />
+          <div style="display:flex;gap:8px">
+            <select id="event-type">
+              <option value="Deadline">Deadline</option>
+              <option value="Holiday">Holiday</option>
+            </select>
+            <input id="event-time" type="time" title="Optional time (24h)"/>
+          </div>
+          <textarea id="event-desc" placeholder="Description (optional)"></textarea>
+          <div class="form-row">
+            <button type="submit" id="save-event">Save</button>
+            <button type="button" id="cancel-event" class="secondary">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </aside>
+
+    <footer class="footer">
+      <small>Academic Calendar 2025. Group 19</small>
+    </footer>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="dashboard.js"></script>
+</body>
+</html>

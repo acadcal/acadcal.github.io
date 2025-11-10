@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Register | Academic Calendar</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .hidden { display: none; }
+    .container {
+      background: white;
+      max-width: 400px;
+      margin: 50px auto;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 3px 5px rgba(0,0,0,0.2);
+    }
+    input, select, button {
+      width: 100%;
+      padding: 10px;
+      margin: 6px 0;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+    }
+    button {
+      background: #4CAF50;
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    button:hover { background: #43a047; }
+    h2 { text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Register</h2>
+
+    <select id="role" required>
+      <option value="">Select Role</option>
+      <option value="Student">Student</option>
+      <option value="Teacher">Teacher</option>
+    </select>
+
+    <div id="account-fields" class="hidden">
+      <input type="text" id="username" placeholder="Username" required>
+      <input type="password" id="password" placeholder="Password" required>
+    </div>
+
+    <div id="student-fields" class="hidden">
+      <input type="text" id="student-number" placeholder="Student Number">
+      <input type="text" id="student-name" placeholder="Full Name">
+      <input type="number" id="student-age" placeholder="Age">
+      <input type="text" id="student-year" placeholder="Year Level">
+    </div>
+
+    <button id="register-btn">Register</button>
+    <p>Already have an account? <a href="index.html">Login</a></p>
+    <p id="register-msg" style="color:red; text-align:center; font-size:14px;"></p>
+  </div>
+    <footer class="footer">
+      <small>Academic Calendar 2025. Group 19</small>
+    </footer>
+  <script src="register.js"></script>
+  <script>
+    // show/hide account & student fields dynamically
+    const roleSelect = document.getElementById('role');
+    const accountFields = document.getElementById('account-fields');
+    const studentFields = document.getElementById('student-fields');
+
+    roleSelect.addEventListener('change', () => {
+      const role = roleSelect.value;
+      if (role) {
+        accountFields.classList.remove('hidden');
+        if (role === 'Student') {
+          studentFields.classList.remove('hidden');
+        } else {
+          studentFields.classList.add('hidden');
+        }
+      } else {
+        accountFields.classList.add('hidden');
+        studentFields.classList.add('hidden');
+      }
+    });
+  </script>
+</body>
+</html>

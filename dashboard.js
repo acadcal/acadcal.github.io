@@ -1,4 +1,11 @@
 // dashboard.js
+// Full dashboard logic (Firestore-backed).
+// - listens to events2025 in realtime
+// - teacher-only add/delete enforced client-side and by Firestore rules
+// - profile editing (role not sent during updates)
+// - username display, logout, notifications while site is open
+// - migration helper included (dev use)
+
 import { auth, db, firebaseHelpers } from './firebase-init.js';
 import {
   collection,
@@ -14,6 +21,7 @@ import {
   getDocs
 } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
 
+/* Constants */
 const YEAR = 2025;
 const EVENTS_COLLECTION = 'events2025';
 
@@ -53,17 +61,19 @@ let activeDate = null;
 let currentUser = null;
 let currentProfile = null;
 
+/* Utility helpers */
 function uidLocal(){ return 'e' + Math.random().toString(36).slice(2,9); }
 function pad(n){ return String(n).padStart(2,'0'); }
 function isoDate(y,m,d){ return `${y}-${pad(m)}-${pad(d)}`; }
 function monthName(m){ return ['January','February','March','April','May','June','July','August','September','October','November','December'][m]; }
 function weekdayShort(i){ return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][i]; }
-function showToast(msg, ms=3500){ toast.textContent = msg; toast.classList.remove('hidden'); setTimeout(()=> toast.classList.add('hidden'), ms); }
+function showToast(msg, ms=3500){ if (!toast) return; toast.textContent = msg; toast.classList.remove('hidden'); setTimeout(()=> toast.classList.add('hidden'), ms); }
 
-/* Auth state */
+/* --- Auth & profile loading --- */
 firebaseHelpers.onAuthStateChanged(auth, async (user) => {
   currentUser = user;
   if (!user) {
+    // not authenticated -> redirect to login
     window.location.href = 'index.html';
     return;
   }
@@ -72,10 +82,13 @@ firebaseHelpers.onAuthStateChanged(auth, async (user) => {
     currentProfile = udocSnap.exists() ? udocSnap.data() : { username: user.email, role: '' };
     renderProfile(currentProfile);
     startEventsListener();
-  } catch (e) { console.error('failed to load profile', e); }
+  } catch (e) {
+    console.error('failed to load profile', e);
+    showToast('Failed to load profile');
+  }
 });
 
-/* Firestore listener */
+/* --- Firestore realtime listener for events --- */
 let unsubscribeEvents = null;
 function startEventsListener(){
   if (unsubscribeEvents) unsubscribeEvents();
@@ -91,7 +104,7 @@ function startEventsListener(){
         title: data.title,
         type: data.type || 'Deadline',
         description: data.description || '',
-        createdAt: data.createdAt ? data.createdAt.toMillis ? data.createdAt.toMillis() : Date.now() : Date.now()
+        createdAt: data.createdAt ? (data.createdAt.toMillis ? data.createdAt.toMillis() : Date.now()) : Date.now()
       });
     });
     events = arr;
@@ -101,7 +114,7 @@ function startEventsListener(){
   }, err => console.error('events listener error', err));
 }
 
-/* Firestore write helpers */
+/* --- Firestore writes (add/delete) --- */
 async function addEventToFirestore(ev) {
   if (!currentUser || !currentProfile) throw new Error('not authenticated');
   if (currentProfile.role !== 'Teacher') throw new Error('Only teachers can add events.');
@@ -124,10 +137,11 @@ async function deleteEventFromFirestore(eventId) {
   await deleteDoc(doc(db, EVENTS_COLLECTION, eventId));
 }
 
-/* UI renderers */
-function updateStats(){ eventCountEl.textContent = events.length; }
+/* --- UI rendering helpers --- */
+function updateStats(){ if (eventCountEl) eventCountEl.textContent = events.length; }
 
 function buildJumpSelector(){
+  if (!jumpMonthSelect) return;
   jumpMonthSelect.innerHTML = '';
   for (let m = 0; m < 12; m++){
     const opt = document.createElement('option'); opt.value = m; opt.textContent = `${monthName(m)} ${YEAR}`;
@@ -141,26 +155,33 @@ function buildJumpSelector(){
 }
 
 function renderAllMonths(){
+  if (!monthsGrid) return;
   monthsGrid.innerHTML = '';
   for (let m = 0; m < 12; m++){
     const monthCard = document.createElement('article'); monthCard.className='month'; monthCard.dataset.month = m;
     const header = document.createElement('div'); header.className='month-header';
     header.innerHTML = `<div class="name">${monthName(m)}</div><div class="year">${YEAR}</div>`;
     monthCard.appendChild(header);
+
     const weekdays = document.createElement('div'); weekdays.className='weekdays';
     for (let wd=0; wd<7; wd++){ const w=document.createElement('div'); w.textContent=weekdayShort(wd); weekdays.appendChild(w); }
     monthCard.appendChild(weekdays);
+
     const days = document.createElement('div'); days.className='days';
     const firstDay = new Date(YEAR, m, 1).getDay();
     const lastDate = new Date(YEAR, m+1, 0).getDate();
+
     for (let i=0;i<firstDay;i++){ const empty=document.createElement('div'); empty.className='day empty'; days.appendChild(empty); }
+
     for (let d=1; d<=lastDate; d++){
       const iso = isoDate(YEAR, m+1, d);
       const cell = document.createElement('div'); cell.className='day';
       const dateNumber = document.createElement('div'); dateNumber.className='date-number'; dateNumber.textContent = d;
       cell.appendChild(dateNumber);
+
       const today = new Date();
       if (today.getFullYear() === YEAR && today.getMonth() === m && today.getDate() === d) cell.classList.add('today');
+
       const evArea = document.createElement('div'); evArea.className='events-area';
       const evs = events.filter(e => e.date === iso);
       const toShow = evs.slice(0, 3);
@@ -180,24 +201,30 @@ function renderAllMonths(){
       cell.addEventListener('click', (ev) => { ev.stopPropagation(); openDayPanel(iso); });
       days.appendChild(cell);
     }
+
     monthCard.appendChild(days);
     monthsGrid.appendChild(monthCard);
   }
 }
 
+/* --- Day panel --- */
 function openDayPanel(iso){
   activeDate = iso;
-  panelDate.textContent = `${iso} • ${new Date(iso).toLocaleDateString(undefined,{weekday:'long', month:'long', day:'numeric'})}`;
-  titleInput.value = ''; descInput.value = ''; timeInput.value = ''; typeInput.value = 'Deadline';
+  if (panelDate) panelDate.textContent = `${iso} • ${new Date(iso).toLocaleDateString(undefined,{weekday:'long', month:'long', day:'numeric'})}`;
+  if (titleInput) titleInput.value = '';
+  if (descInput) descInput.value = '';
+  if (timeInput) timeInput.value = '';
+  if (typeInput) typeInput.value = 'Deadline';
   renderPanelEvents();
-  eventForm.style.display = (currentProfile && currentProfile.role === 'Teacher') ? 'block' : 'none';
-  panel.classList.remove('hidden');
+  if (eventForm) eventForm.style.display = (currentProfile && currentProfile.role === 'Teacher') ? 'block' : 'none';
+  panel?.classList.remove('hidden');
 }
-function closePanel(){ panel.classList.add('hidden'); activeDate = null; }
+function closePanel(){ panel?.classList.add('hidden'); activeDate = null; }
 panelClose?.addEventListener('click', closePanel);
 cancelBtn?.addEventListener('click', (e)=>{ e.preventDefault(); closePanel(); });
 
 function renderPanelEvents(){
+  if (!eventList) return;
   eventList.innerHTML = '';
   if (!activeDate) return;
   const evs = events.filter(e => e.date === activeDate).sort((a,b)=>(a.time||'') > (b.time||'') ? 1 : -1);
@@ -225,7 +252,7 @@ function renderPanelEvents(){
   });
 }
 
-/* event form */
+/* --- Add event form (teacher only) --- */
 eventForm?.addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!activeDate) return alert('No date selected');
@@ -241,12 +268,13 @@ eventForm?.addEventListener('submit', async (e) => {
   }
 });
 
-/* profile */
+/* --- Profile UI & save (omit role field during update) --- */
 function renderProfile(profile){
-  if (!profile) { userNameDisplay.textContent = 'Guest'; profileRoleReadonly.textContent = '—'; return; }
-  userNameDisplay.textContent = profile.username || 'Guest';
-  profileUsername.value = profile.username || '';
-  profileRoleReadonly.textContent = profile.role || '—';
+  if (!profile) { if (userNameDisplay) userNameDisplay.textContent = 'Guest'; if (profileRoleReadonly) profileRoleReadonly.textContent = '—'; return; }
+  if (userNameDisplay) userNameDisplay.textContent = profile.username || 'Guest';
+  if (profileUsername) profileUsername.value = profile.username || '';
+  if (profileRoleReadonly) profileRoleReadonly.textContent = profile.role || '—';
+
   if (profile.role === 'Student'){
     studentFieldsPanel.classList.remove('hidden');
     profileSnum.value = profile.studentNumber || '';
@@ -272,28 +300,35 @@ editProfileBtn?.addEventListener('click', ()=>{
 saveProfileBtn?.addEventListener('click', async ()=>{
   if (!currentUser) return showToast('Not authenticated');
   const existing = currentProfile || { username:'Guest', role:'' };
+
+  // Build update payload WITHOUT 'role' field (role must not be changed by client)
   const profileToSave = {
     username: profileUsername.value.trim() || existing.username || 'Guest',
-    role: existing.role || '',
     studentNumber: profileSnum.value.trim(),
     studentName: profileSname.value.trim(),
     studentAge: profileSage.value ? Number(profileSage.value) : '',
-    studentYear: profileSyear.value.trim()
+    studentYear: profileSyear.value.trim(),
+    updatedAt: firebaseHelpers.serverTimestamp()
   };
+
   try {
+    // merge update - will not touch role because payload doesn't include it
     await setDoc(doc(db, 'users', currentUser.uid), profileToSave, { merge: true });
-    currentProfile = profileToSave;
-    renderProfile(profileToSave);
+    // merge locally so UI reflects new data
+    currentProfile = Object.assign({}, existing, profileToSave);
+    renderProfile(currentProfile);
     showToast('Profile saved');
     profilePanel.classList.add('hidden');
   } catch (e) {
-    console.error('save profile failed', e); showToast('Save failed');
+    console.error('save profile failed', e);
+    if (e && e.code === 'permission-denied') showToast('Save failed: insufficient permissions.');
+    else showToast('Save failed');
   }
 });
 
 closeProfileBtn?.addEventListener('click', ()=> profilePanel.classList.add('hidden'));
 
-/* logout */
+/* --- Logout --- */
 logoutBtn?.addEventListener('click', async () => {
   try {
     await firebaseHelpers.signOut(auth);
@@ -302,8 +337,8 @@ logoutBtn?.addEventListener('click', async () => {
   } catch (e) { console.error(e); showToast('Logout failed'); }
 });
 
-/* notifications (in-page) */
-function updateNotifStateLabel(){ notifState.textContent = Notification.permission === 'granted' ? 'On' : (Notification.permission === 'denied' ? 'Blocked' : 'Off'); }
+/* --- Notifications (in-page only) --- */
+function updateNotifStateLabel(){ if (notifState) notifState.textContent = Notification.permission === 'granted' ? 'On' : (Notification.permission === 'denied' ? 'Blocked' : 'Off'); }
 btnNotifPerm?.addEventListener('click', async ()=>{
   if (!('Notification' in window)) { alert('Browser notifications not supported'); return; }
   if (Notification.permission === 'granted') { showToast('Notifications already allowed'); updateNotifStateLabel(); return; }
@@ -316,7 +351,7 @@ btnNotifPerm?.addEventListener('click', async ()=>{
   } catch (e) { console.error(e); }
 });
 
-/* scan for today's events every 30s */
+/* --- Scan for today's events every 30s and notify if allowed --- */
 function scanAndNotify(){
   const now = new Date(); const todayISO = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
   const todaysEvents = events.filter(e => e.date === todayISO);
@@ -330,7 +365,7 @@ function scanAndNotify(){
 setInterval(scanAndNotify, 30*1000);
 updateNotifStateLabel();
 
-/* migration helper (dev) */
+/* --- Migration helper (developer) --- */
 async function migrateLocalEventsToFirestore() {
   try {
     const raw = localStorage.getItem('ac_events_2025');
@@ -360,17 +395,17 @@ async function migrateLocalEventsToFirestore() {
   } catch (e) { console.error('migration failed', e); }
 }
 
-/* init */
+/* --- Initialization --- */
 function initialize(){
   buildJumpSelector();
   renderAllMonths();
   updateStats();
-  // window.__ac2025 = { migrateLocalEventsToFirestore }; // expose if you want
+  // expose migration helper for dev usage:
+  window.__ac2025 = { events, reload: startEventsListener, migrateLocalEventsToFirestore };
 }
 initialize();
 
-window.__ac2025 = { events, reload: startEventsListener, migrateLocalEventsToFirestore };
-
+/* Close day panel when clicking outside */
 document.addEventListener('click', (e) => {
-  if (!panel.contains(e.target) && !e.target.closest('.day')) closePanel();
+  if (!panel?.contains(e.target) && !e.target.closest('.day')) closePanel();
 });

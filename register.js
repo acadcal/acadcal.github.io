@@ -1,6 +1,8 @@
-// register.js
+// register.js (updated)
+// Writes a public username->email mapping to usernames/{username} so login-by-username can be resolved before auth.
+
 import { auth, db, firebaseHelpers } from './firebase-init.js';
-import { doc, setDoc } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
+import { doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
 
 const roleSel = document.getElementById('role');
 const studentFields = document.getElementById('student-fields');
@@ -49,9 +51,18 @@ registerBtn?.addEventListener('click', async (ev) => {
   }
 
   try {
+    // Prevent duplicate username: check the usernames collection
+    const usernameDocRef = doc(db, 'usernames', username.toLowerCase());
+    const existing = await getDoc(usernameDocRef);
+    if (existing.exists()) {
+      return setMessage('Username already taken. Choose another.');
+    }
+
+    // create auth user
     const userCredential = await firebaseHelpers.createUserWithEmailAndPassword(auth, email, password);
     const uid = userCredential.user.uid;
 
+    // user profile doc
     const userDoc = {
       username,
       email,
@@ -65,10 +76,15 @@ registerBtn?.addEventListener('click', async (ev) => {
 
     await setDoc(doc(db, 'users', uid), userDoc);
 
-    // redirect to dashboard (user already signed in by Firebase)
+    // public username mapping (lowercased key)
+    await setDoc(usernameDocRef, { uid, email });
+
+    // redirect
     window.location.href = 'dashboard.html';
   } catch (err) {
     console.error('register error', err);
-    setMessage(err.message || 'Registration failed.');
+    // handle common errors
+    if (err && err.code === 'auth/email-already-in-use') setMessage('Email already in use.');
+    else setMessage(err.message || 'Registration failed.');
   }
 });

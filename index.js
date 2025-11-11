@@ -1,6 +1,8 @@
-// index.js
+// index.js (updated)
+// Resolves username via public usernames/{username} mapping before attempting sign-in.
+
 import { auth, db, firebaseHelpers } from './firebase-init.js';
-import { collection, query, where, getDocs, limit } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
+import { collection, doc, getDoc, query, where, getDocs, limit } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
 
 const loginBtn = document.getElementById('login-btn');
 const msgEl = document.getElementById('login-msg');
@@ -22,12 +24,14 @@ loginBtn?.addEventListener('click', async (ev) => {
   try {
     let emailToUse = identifier;
 
+    // If input doesn't contain '@', treat it as username and look up the public mapping
     if (!identifier.includes('@')) {
-      const q = query(collection(db, 'users'), where('username', '==', identifier), limit(1));
-      const snap = await getDocs(q);
-      if (snap.empty) return setMessage('User not found.');
-      const userDoc = snap.docs[0].data();
-      emailToUse = userDoc.email;
+      const usernameKey = identifier.toLowerCase();
+      const mappingSnap = await getDoc(doc(db, 'usernames', usernameKey));
+      if (!mappingSnap.exists()) return setMessage('User not found.');
+      const mapping = mappingSnap.data();
+      emailToUse = mapping.email;
+      if (!emailToUse) return setMessage('User mapping invalid. Use email to sign-in.');
     }
 
     await firebaseHelpers.signInWithEmailAndPassword(auth, emailToUse, password);
@@ -36,6 +40,9 @@ loginBtn?.addEventListener('click', async (ev) => {
     window.location.href = 'dashboard.html';
   } catch (err) {
     console.error('login error', err);
-    setMessage(err.message || 'Login failed');
+    // Common Firebase error handling
+    if (err && err.code === 'auth/wrong-password') setMessage('Incorrect password.');
+    else if (err && err.code === 'auth/user-not-found') setMessage('Account not found.');
+    else setMessage(err.message || 'Login failed');
   }
 });

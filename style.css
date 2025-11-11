@@ -53,10 +53,8 @@ body{
 .user-block{
   display:flex; align-items:center; gap:8px;
 }
-.greeting{ font-weight:700; }
-.user-block button{ background:transparent; border:1px solid rgba(0,0,0,0.06); padding:6px 8px; border-radius:8px; cursor:pointer; }
-#logout-btn { background:#ef4444; color:white; border:none; padding:6px 10px; border-radius:8px; cursor:pointer; }
 .notif-control{ display:flex; align-items:center; gap:8px; }
+.greeting{ font-weight:700; }
 
 /* readonly field (role) */
 .readonly-field{

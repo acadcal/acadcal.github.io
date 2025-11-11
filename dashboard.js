@@ -1,11 +1,4 @@
 // dashboard.js
-// Full dashboard logic (Firestore-backed).
-// - listens to events2025 in realtime
-// - teacher-only add/delete enforced client-side and by Firestore rules
-// - profile editing (role not sent during updates)
-// - username display, logout, notifications while site is open
-// - migration helper included (dev use)
-
 import { auth, db, firebaseHelpers } from './firebase-init.js';
 import {
   collection,
@@ -61,7 +54,6 @@ let activeDate = null;
 let currentUser = null;
 let currentProfile = null;
 
-/* Utility helpers */
 function uidLocal(){ return 'e' + Math.random().toString(36).slice(2,9); }
 function pad(n){ return String(n).padStart(2,'0'); }
 function isoDate(y,m,d){ return `${y}-${pad(m)}-${pad(d)}`; }
@@ -69,11 +61,10 @@ function monthName(m){ return ['January','February','March','April','May','June'
 function weekdayShort(i){ return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][i]; }
 function showToast(msg, ms=3500){ if (!toast) return; toast.textContent = msg; toast.classList.remove('hidden'); setTimeout(()=> toast.classList.add('hidden'), ms); }
 
-/* --- Auth & profile loading --- */
+/* Auth state */
 firebaseHelpers.onAuthStateChanged(auth, async (user) => {
   currentUser = user;
   if (!user) {
-    // not authenticated -> redirect to login
     window.location.href = 'index.html';
     return;
   }
@@ -82,13 +73,10 @@ firebaseHelpers.onAuthStateChanged(auth, async (user) => {
     currentProfile = udocSnap.exists() ? udocSnap.data() : { username: user.email, role: '' };
     renderProfile(currentProfile);
     startEventsListener();
-  } catch (e) {
-    console.error('failed to load profile', e);
-    showToast('Failed to load profile');
-  }
+  } catch (e) { console.error('failed to load profile', e); }
 });
 
-/* --- Firestore realtime listener for events --- */
+/* Firestore listener */
 let unsubscribeEvents = null;
 function startEventsListener(){
   if (unsubscribeEvents) unsubscribeEvents();
@@ -104,7 +92,7 @@ function startEventsListener(){
         title: data.title,
         type: data.type || 'Deadline',
         description: data.description || '',
-        createdAt: data.createdAt ? (data.createdAt.toMillis ? data.createdAt.toMillis() : Date.now()) : Date.now()
+        createdAt: data.createdAt ? data.createdAt.toMillis ? data.createdAt.toMillis() : Date.now() : Date.now()
       });
     });
     events = arr;
@@ -114,7 +102,7 @@ function startEventsListener(){
   }, err => console.error('events listener error', err));
 }
 
-/* --- Firestore writes (add/delete) --- */
+/* Firestore write helpers */
 async function addEventToFirestore(ev) {
   if (!currentUser || !currentProfile) throw new Error('not authenticated');
   if (currentProfile.role !== 'Teacher') throw new Error('Only teachers can add events.');
@@ -137,7 +125,7 @@ async function deleteEventFromFirestore(eventId) {
   await deleteDoc(doc(db, EVENTS_COLLECTION, eventId));
 }
 
-/* --- UI rendering helpers --- */
+/* UI renderers */
 function updateStats(){ if (eventCountEl) eventCountEl.textContent = events.length; }
 
 function buildJumpSelector(){
@@ -152,6 +140,27 @@ function buildJumpSelector(){
     const target = monthsGrid.querySelector(`.month[data-month="${idx}"]`);
     if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
+}
+
+/* Helper to create an event-line element with marquee support */
+function createEventLineElement(e){
+  const el = document.createElement('div');
+  const variant = e.type === 'Holiday' ? 'holiday' : 'deadline';
+  el.className = 'event-line ' + variant;
+  el.title = e.title + (e.description ? ' — ' + e.description : '');
+
+  // Title wrapper and span (for measuring)
+  const titleWrap = document.createElement('div');
+  titleWrap.className = 'title-wrap';
+  const titleSpan = document.createElement('span');
+  titleSpan.className = 'title-span';
+  titleSpan.textContent = (e.time ? (e.time + ' • ') : '') + e.title;
+  titleWrap.appendChild(titleSpan);
+  el.appendChild(titleWrap);
+
+  // After element inserted into DOM we will check overflow and enable marquee if needed.
+  // We return both the element and the titleSpan so caller can measure after append.
+  return { el, titleSpan, titleWrap };
 }
 
 function renderAllMonths(){
@@ -183,14 +192,14 @@ function renderAllMonths(){
       if (today.getFullYear() === YEAR && today.getMonth() === m && today.getDate() === d) cell.classList.add('today');
 
       const evArea = document.createElement('div'); evArea.className='events-area';
-      const evs = events.filter(e => e.date === iso);
+      const evs = events.filter(ev => ev.date === iso);
       const toShow = evs.slice(0, 3);
+      const createdEventNodes = []; // for post-append measurement
+
       toShow.forEach(e=>{
-        const el = document.createElement('div');
-        el.className = 'event-line ' + (e.type === 'Holiday' ? 'holiday' : 'deadline');
-        el.textContent = (e.time ? (e.time + ' • ') : '') + e.title;
-        el.title = e.description || '';
+        const { el, titleSpan, titleWrap } = createEventLineElement(e);
         evArea.appendChild(el);
+        createdEventNodes.push({ el, titleSpan, titleWrap });
       });
       if (evs.length > 3){
         const more = document.createElement('div'); more.className='more-indicator'; more.textContent = '+' + (evs.length - 3) + ' more';
@@ -198,8 +207,42 @@ function renderAllMonths(){
         evArea.appendChild(more);
       }
       cell.appendChild(evArea);
-      cell.addEventListener('click', (ev) => { ev.stopPropagation(); openDayPanel(iso); });
       days.appendChild(cell);
+
+      // After appended, measure and enable marquee if needed
+      // Use requestAnimationFrame so layout is stable
+      requestAnimationFrame(() => {
+        createdEventNodes.forEach(({ el, titleSpan, titleWrap }) => {
+          try {
+            const containerWidth = titleWrap.clientWidth;
+            const textWidth = titleSpan.scrollWidth;
+            if (textWidth > containerWidth + 6) {
+              // Need marquee. Set CSS var for distance and compute duration proportionally
+              const distancePx = textWidth + 24; // include breathing room
+              el.classList.add('marquee');
+              // set CSS variable to allow keyframes to use it
+              el.style.setProperty('--marquee-distance', distancePx + 'px');
+              // Calculate duration: longer distance => longer duration (px / speed)
+              // speed ~ 60 px/s is reasonable; adjust for readability
+              const speed = 60; // px per second
+              const duration = Math.max(6, Math.ceil(distancePx / speed)); // seconds, min 6s
+              titleSpan.style.animationDuration = duration + 's';
+              // For smooth continuous loop, duplicate text content to create seamless loop if desired
+              // Here we keep single text but the keyframe translates it by the distance.
+            } else {
+              // Ensure no leftover marquee
+              el.classList.remove('marquee');
+              el.style.removeProperty('--marquee-distance');
+              titleSpan.style.removeProperty('animation-duration');
+            }
+          } catch (err) {
+            // ignore measurement errors
+          }
+        });
+      });
+
+      // click opens panel
+      cell.addEventListener('click', (ev) => { ev.stopPropagation(); openDayPanel(iso); });
     }
 
     monthCard.appendChild(days);
@@ -207,19 +250,15 @@ function renderAllMonths(){
   }
 }
 
-/* --- Day panel --- */
 function openDayPanel(iso){
   activeDate = iso;
   if (panelDate) panelDate.textContent = `${iso} • ${new Date(iso).toLocaleDateString(undefined,{weekday:'long', month:'long', day:'numeric'})}`;
-  if (titleInput) titleInput.value = '';
-  if (descInput) descInput.value = '';
-  if (timeInput) timeInput.value = '';
-  if (typeInput) typeInput.value = 'Deadline';
+  titleInput.value = ''; descInput.value = ''; timeInput.value = ''; typeInput.value = 'Deadline';
   renderPanelEvents();
-  if (eventForm) eventForm.style.display = (currentProfile && currentProfile.role === 'Teacher') ? 'block' : 'none';
-  panel?.classList.remove('hidden');
+  eventForm.style.display = (currentProfile && currentProfile.role === 'Teacher') ? 'block' : 'none';
+  panel.classList.remove('hidden');
 }
-function closePanel(){ panel?.classList.add('hidden'); activeDate = null; }
+function closePanel(){ panel.classList.add('hidden'); activeDate = null; }
 panelClose?.addEventListener('click', closePanel);
 cancelBtn?.addEventListener('click', (e)=>{ e.preventDefault(); closePanel(); });
 
@@ -235,7 +274,8 @@ function renderPanelEvents(){
   evs.forEach(ev=>{
     const li = document.createElement('li'); li.className='event-item';
     const left = document.createElement('div'); left.style.flex='1';
-    const title = document.createElement('div'); title.className='title'; title.textContent = (ev.time ? (ev.time + ' • ') : '') + ev.title;
+    const title = document.createElement('div'); title.className='title';
+    title.textContent = (ev.time ? (ev.time + ' • ') : '') + ev.title;
     const meta = document.createElement('div'); meta.className='meta'; meta.innerHTML = `<strong>${ev.type}</strong> • added ${new Date(ev.createdAt).toLocaleString()}`;
     const desc = document.createElement('div'); desc.className='meta'; desc.textContent = ev.description || '';
     left.appendChild(title); left.appendChild(meta); if (ev.description) left.appendChild(desc);
@@ -252,7 +292,7 @@ function renderPanelEvents(){
   });
 }
 
-/* --- Add event form (teacher only) --- */
+/* event form */
 eventForm?.addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!activeDate) return alert('No date selected');
@@ -268,7 +308,7 @@ eventForm?.addEventListener('submit', async (e) => {
   }
 });
 
-/* --- Profile UI & save (omit role field during update) --- */
+/* profile */
 function renderProfile(profile){
   if (!profile) { if (userNameDisplay) userNameDisplay.textContent = 'Guest'; if (profileRoleReadonly) profileRoleReadonly.textContent = '—'; return; }
   if (userNameDisplay) userNameDisplay.textContent = profile.username || 'Guest';
@@ -301,7 +341,6 @@ saveProfileBtn?.addEventListener('click', async ()=>{
   if (!currentUser) return showToast('Not authenticated');
   const existing = currentProfile || { username:'Guest', role:'' };
 
-  // Build update payload WITHOUT 'role' field (role must not be changed by client)
   const profileToSave = {
     username: profileUsername.value.trim() || existing.username || 'Guest',
     studentNumber: profileSnum.value.trim(),
@@ -312,9 +351,7 @@ saveProfileBtn?.addEventListener('click', async ()=>{
   };
 
   try {
-    // merge update - will not touch role because payload doesn't include it
     await setDoc(doc(db, 'users', currentUser.uid), profileToSave, { merge: true });
-    // merge locally so UI reflects new data
     currentProfile = Object.assign({}, existing, profileToSave);
     renderProfile(currentProfile);
     showToast('Profile saved');
@@ -328,7 +365,7 @@ saveProfileBtn?.addEventListener('click', async ()=>{
 
 closeProfileBtn?.addEventListener('click', ()=> profilePanel.classList.add('hidden'));
 
-/* --- Logout --- */
+/* logout */
 logoutBtn?.addEventListener('click', async () => {
   try {
     await firebaseHelpers.signOut(auth);
@@ -337,7 +374,7 @@ logoutBtn?.addEventListener('click', async () => {
   } catch (e) { console.error(e); showToast('Logout failed'); }
 });
 
-/* --- Notifications (in-page only) --- */
+/* notifications (in-page) */
 function updateNotifStateLabel(){ if (notifState) notifState.textContent = Notification.permission === 'granted' ? 'On' : (Notification.permission === 'denied' ? 'Blocked' : 'Off'); }
 btnNotifPerm?.addEventListener('click', async ()=>{
   if (!('Notification' in window)) { alert('Browser notifications not supported'); return; }
@@ -351,7 +388,7 @@ btnNotifPerm?.addEventListener('click', async ()=>{
   } catch (e) { console.error(e); }
 });
 
-/* --- Scan for today's events every 30s and notify if allowed --- */
+/* scan for today's events every 30s */
 function scanAndNotify(){
   const now = new Date(); const todayISO = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
   const todaysEvents = events.filter(e => e.date === todayISO);
@@ -365,7 +402,7 @@ function scanAndNotify(){
 setInterval(scanAndNotify, 30*1000);
 updateNotifStateLabel();
 
-/* --- Migration helper (developer) --- */
+/* migration helper (dev) */
 async function migrateLocalEventsToFirestore() {
   try {
     const raw = localStorage.getItem('ac_events_2025');
@@ -395,17 +432,15 @@ async function migrateLocalEventsToFirestore() {
   } catch (e) { console.error('migration failed', e); }
 }
 
-/* --- Initialization --- */
+/* init */
 function initialize(){
   buildJumpSelector();
   renderAllMonths();
   updateStats();
-  // expose migration helper for dev usage:
   window.__ac2025 = { events, reload: startEventsListener, migrateLocalEventsToFirestore };
 }
 initialize();
 
-/* Close day panel when clicking outside */
 document.addEventListener('click', (e) => {
-  if (!panel?.contains(e.target) && !e.target.closest('.day')) closePanel();
+  if (!panel.contains(e.target) && !e.target.closest('.day')) closePanel();
 });

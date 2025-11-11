@@ -1,60 +1,41 @@
-// index.js - login page (robust, uses ac_users and writes ac_user on success)
+// index.js
+import { auth, db, firebaseHelpers } from './firebase-init.js';
+import { collection, query, where, getDocs, limit } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
 
-(function () {
-  const loginBtn = document.getElementById('login-btn');
-  const msgEl = document.getElementById('login-msg');
+const loginBtn = document.getElementById('login-btn');
+const msgEl = document.getElementById('login-msg');
 
-  if (!loginBtn) return; // not on login page
+function setMessage(text) {
+  if (msgEl) msgEl.textContent = text; else console.warn(text);
+}
 
-  function setMessage(text) {
-    if (msgEl) msgEl.textContent = text;
-    else console.warn('login message:', text);
-  }
+loginBtn?.addEventListener('click', async (ev) => {
+  ev.preventDefault();
+  setMessage('');
 
-  function loadUsers() {
-    try {
-      return JSON.parse(localStorage.getItem('ac_users')) || [];
-    } catch (e) {
-      console.error('Failed to read ac_users', e);
-      return [];
-    }
-  }
+  const identifier = document.getElementById('login-username')?.value?.trim();
+  const password = document.getElementById('login-password')?.value?.trim();
 
-  function saveActiveProfile(profile) {
-    try {
-      localStorage.setItem('ac_user', JSON.stringify(profile));
-    } catch (e) {
-      console.error('Failed to save ac_user', e);
-    }
-  }
+  if (!identifier) return setMessage('Please enter username or email.');
+  if (!password) return setMessage('Please enter password.');
 
-  loginBtn.addEventListener('click', (ev) => {
-    ev.preventDefault();
-    setMessage('');
+  try {
+    let emailToUse = identifier;
 
-    const username = document.getElementById('login-username')?.value?.trim();
-    const password = document.getElementById('login-password')?.value || '';
-
-    if (!username) return setMessage('Please enter your username.');
-    if (!password) return setMessage('Please enter your password.');
-
-    const users = loadUsers();
-    const user = users.find(u => u.username === username && u.password === password);
-    if (!user) {
-      return setMessage('Invalid username or password.');
+    if (!identifier.includes('@')) {
+      const q = query(collection(db, 'users'), where('username', '==', identifier), limit(1));
+      const snap = await getDocs(q);
+      if (snap.empty) return setMessage('User not found.');
+      const userDoc = snap.docs[0].data();
+      emailToUse = userDoc.email;
     }
 
-    // Build profile for dashboard (fields the dashboard expects)
-    const profile = {
-      username: user.username,
-      role: user.role || '',
-      studentNumber: user.studentNumber || '',
-      studentName: user.studentName || '',
-      studentAge: user.studentAge || '',
-      studentYear: user.studentYear || ''
-    };
+    await firebaseHelpers.signInWithEmailAndPassword(auth, emailToUse, password);
 
-    saveActiveProfile(profile);
+    // redirect to dashboard
     window.location.href = 'dashboard.html';
-  });
-})();
+  } catch (err) {
+    console.error('login error', err);
+    setMessage(err.message || 'Login failed');
+  }
+});

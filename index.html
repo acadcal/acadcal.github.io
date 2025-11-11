@@ -1,23 +1,45 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Login | Academic Calendar</title>
   <link rel="stylesheet" href="style.css" />
+
+  <!-- Firebase modular initializer (creates window.__fb) -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
+    import { getAuth } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-auth.js";
+    import { getFirestore } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyDMh2NzRgNLrRiJLmBsbhN1ZwMOZt8gx6Y",
+      authDomain: "academic-calendar-web-c6cac.firebaseapp.com",
+      projectId: "academic-calendar-web-c6cac",
+      storageBucket: "academic-calendar-web-c6cac.firebasestorage.app",
+      messagingSenderId: "652914167209",
+      appId: "1:652914167209:web:7a36ff3afb940329a488b8",
+      measurementId: "G-E242CLV8KM"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    // expose helpers for module files to use single init
+    window.__fb = { app, getAuth, getFirestore };
+  </script>
+
+  <!-- firebase-init module used by JS modules -->
+  <script type="module" src="firebase-init.js"></script>
+  <!-- app login script -->
+  <script type="module" src="index.js"></script>
 </head>
 <body>
   <div class="container">
-    <h1>Academic Calendar 2025</h1>
     <h2>Login</h2>
-    <input type="text" id="login-username" placeholder="Username" required />
-    <input type="password" id="login-password" placeholder="Password" required />
+    <input type="text" id="login-username" placeholder="Username or Email" required>
+    <input type="password" id="login-password" placeholder="Password" required>
     <button id="login-btn">Login</button>
+    <p id="login-msg" class="msg" style="color:red;"></p>
     <p>Don't have an account? <a href="register.html">Register</a></p>
   </div>
-    <footer class="footer">
-      <small>Academic Calendar 2025. Group 19</small>
-    </footer>
-  <script src="index.js"></script>
 </body>
 </html>

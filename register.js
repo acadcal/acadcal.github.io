@@ -1,114 +1,74 @@
-// register.js - robust registration (handles optional email input)
-// Saves users to localStorage key "ac_users" and active profile to "ac_user"
+// register.js
+import { auth, db, firebaseHelpers } from './firebase-init.js';
+import { doc, setDoc } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
 
-(function () {
-  const roleSel = document.getElementById('role');
-  const studentFields = document.getElementById('student-fields');
-  const registerBtn = document.getElementById('register-btn');
-  const msgEl = document.getElementById('register-msg');
+const roleSel = document.getElementById('role');
+const studentFields = document.getElementById('student-fields');
+const registerBtn = document.getElementById('register-btn');
+const msgEl = document.getElementById('register-msg');
 
-  if (!registerBtn) return; // not on register page
-
-  function setMessage(text) {
-    if (msgEl) msgEl.textContent = text;
-    else console.warn('register message:', text);
-  }
-
-  function loadUsers() {
-    try {
-      return JSON.parse(localStorage.getItem('ac_users')) || [];
-    } catch (e) {
-      console.error('Failed to read ac_users', e);
-      return [];
-    }
-  }
-  function saveUsers(users) {
-    try {
-      localStorage.setItem('ac_users', JSON.stringify(users));
-    } catch (e) {
-      console.error('Failed to save ac_users', e);
-    }
-  }
-  function saveActiveProfile(profile) {
-    try {
-      localStorage.setItem('ac_user', JSON.stringify(profile));
-    } catch (e) {
-      console.error('Failed to save ac_user', e);
-    }
-  }
-
-  // toggle student fields visibility if that control exists
-  roleSel?.addEventListener('change', () => {
+if (roleSel) {
+  roleSel.addEventListener('change', () => {
     if (roleSel.value === 'Student') studentFields?.classList.remove('hidden');
     else studentFields?.classList.add('hidden');
+    const account = document.getElementById('account-fields');
+    if (roleSel.value) account.classList.remove('hidden'); else account.classList.add('hidden');
   });
+}
 
-  registerBtn.addEventListener('click', (ev) => {
-    ev.preventDefault();
-    setMessage('');
+function setMessage(text) {
+  if (msgEl) msgEl.textContent = text; else console.warn(text);
+}
 
-    const role = document.getElementById('role')?.value?.trim();
-    const username = document.getElementById('username')?.value?.trim();
-    const emailInput = document.getElementById('email'); // optional
-    const email = emailInput ? (emailInput.value || '').trim() : '';
-    const password = document.getElementById('password')?.value || '';
+registerBtn?.addEventListener('click', async (ev) => {
+  ev.preventDefault();
+  setMessage('');
 
-    // Basic required checks (email only required if the field exists)
-    if (!role) return setMessage('Please select a role.');
-    if (!username) return setMessage('Please enter a username.');
-    if (!password) return setMessage('Please enter a password.');
-    if (emailInput && !email) return setMessage('Please enter an email address.');
+  const role = document.getElementById('role')?.value?.trim();
+  const email = document.getElementById('email')?.value?.trim();
+  const username = document.getElementById('username')?.value?.trim();
+  const password = document.getElementById('password')?.value || '';
 
-    const users = loadUsers();
-    if (users.some(u => u.username === username)) {
-      return setMessage('Username already taken. Choose another.');
-    }
+  if (!role) return setMessage('Please select a role.');
+  if (!email) return setMessage('Please enter an email address.');
+  if (!username) return setMessage('Please enter a username.');
+  if (!password || password.length < 6) return setMessage('Password must be at least 6 characters.');
 
-    // If Student role, validate student fields (if present in DOM)
-    let studentNumber = '', studentName = '', studentAge = '', studentYear = '';
-    if (role === 'Student') {
-      studentNumber = document.getElementById('student-number')?.value?.trim() || '';
-      studentName = document.getElementById('student-name')?.value?.trim() || '';
-      studentAge = document.getElementById('student-age')?.value || '';
-      studentYear = document.getElementById('student-year')?.value?.trim() || '';
+  let studentNumber = '', studentName = '', studentAge = '', studentYear = '';
+  if (role === 'Student') {
+    studentNumber = document.getElementById('student-number')?.value?.trim() || '';
+    studentName = document.getElementById('student-name')?.value?.trim() || '';
+    studentAge = document.getElementById('student-age')?.value || '';
+    studentYear = document.getElementById('student-year')?.value?.trim() || '';
 
-      // Only require fields that are present in DOM
-      const missing = [];
-      if (document.getElementById('student-number') && !studentNumber) missing.push('student number');
-      if (document.getElementById('student-name') && !studentName) missing.push('full name');
-      if (document.getElementById('student-year') && !studentYear) missing.push('year level');
+    const missing = [];
+    if (document.getElementById('student-number') && !studentNumber) missing.push('student number');
+    if (document.getElementById('student-name') && !studentName) missing.push('full name');
+    if (document.getElementById('student-year') && !studentYear) missing.push('year level');
+    if (missing.length > 0) return setMessage('Please complete student fields: ' + missing.join(', '));
+  }
 
-      if (missing.length > 0) return setMessage('Please complete student fields: ' + missing.join(', ') + '.');
-    }
+  try {
+    const userCredential = await firebaseHelpers.createUserWithEmailAndPassword(auth, email, password);
+    const uid = userCredential.user.uid;
 
-    // Create user object and store
-    const newUser = {
+    const userDoc = {
       username,
       email,
-      password, // plain text for prototype only
       role,
       studentNumber,
       studentName,
-      studentAge,
+      studentAge: studentAge ? Number(studentAge) : '',
       studentYear,
-      createdAt: Date.now()
+      createdAt: firebaseHelpers.serverTimestamp()
     };
 
-    users.push(newUser);
-    saveUsers(users);
+    await setDoc(doc(db, 'users', uid), userDoc);
 
-    // also save active profile so dashboard sees it immediately
-    const profile = {
-      username: newUser.username,
-      role: newUser.role,
-      studentNumber: newUser.studentNumber,
-      studentName: newUser.studentName,
-      studentAge: newUser.studentAge,
-      studentYear: newUser.studentYear
-    };
-    saveActiveProfile(profile);
-
-    // redirect to dashboard (user is "logged in")
+    // redirect to dashboard (user already signed in by Firebase)
     window.location.href = 'dashboard.html';
-  });
-})();
+  } catch (err) {
+    console.error('register error', err);
+    setMessage(err.message || 'Registration failed.');
+  }
+});
